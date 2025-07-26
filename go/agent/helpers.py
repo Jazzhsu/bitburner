@@ -1,5 +1,5 @@
 # tag::helpersimport[]
-from go.gotypes import Point
+from gotypes import Point
 # end::helpersimport[]
 
 __all__ = [

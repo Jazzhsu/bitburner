@@ -1,10 +1,13 @@
 import numpy as np
 
-from torch.optim import SGD
+import torch
+from torch.optim import Adam
+from torch.utils.data import DataLoader, TensorDataset
+import torch.nn.functional as F
 
-from .. import encoders
-from .. import goboard_fast
-from ..agent import Agent
+import encoders
+import goboard_fast
+from agent import Agent
 
 __all__ = [
     'ACAgent',
@@ -31,12 +34,11 @@ class ACAgent(Agent):
     def select_move(self, game_state):
         num_moves = self.encoder.board_width * self.encoder.board_height
 
-        board_tensor = self.encoder.encode(game_state)
-        x = np.array([board_tensor])
+        board_tensor = torch.from_numpy(self.encoder.encode(game_state))
 
-        actions, values = self.model.predict(x)
-        move_probs = actions[0]
-        estimated_value = values[0][0]
+        actions, values = self.model(board_tensor[None].float())
+        move_probs = actions[0].detach().cpu().numpy()
+        estimated_value = values[0].detach().cpu().numpy()[0]
         self.last_state_value = float(estimated_value)
 
         # Prevent move probs from getting stuck at 0 or 1.
@@ -66,24 +68,35 @@ class ACAgent(Agent):
         # No legal, non-self-destructive moves less.
         return goboard_fast.Move.pass_turn()
 
-    def train(self, experience, lr=0.1, batch_size=128):
-        opt = SGD(lr=lr, clipvalue=0.2)
-        self.model.compile(
-            optimizer=opt,
-            loss=['categorical_crossentropy', 'mse'])
-
+    def train(self, experience, lr=0.1, batch_size=128, epochs=1):
         n = experience.states.shape[0]
         num_moves = self.encoder.num_points()
         policy_target = np.zeros((n, num_moves))
         value_target = np.zeros((n,))
+
         for i in range(n):
             action = experience.actions[i]
             reward = experience.rewards[i]
             policy_target[i][action] = experience.advantages[i]
             value_target[i] = reward
 
-        self.model.fit(
-            experience.states,
-            [policy_target, value_target],
-            batch_size=batch_size,
-            epochs=1)
+        policy_target = torch.from_numpy(policy_target).float()
+        value_target = torch.from_numpy(value_target).float()
+        board_tensor = torch.from_numpy(experience.states).float()
+
+        policy_data = DataLoader(TensorDataset(board_tensor, policy_target, value_target), batch_size=batch_size, shuffle=True)
+
+        opt = Adam(params=self.model.parameters(), lr=lr)
+        self.model.train()
+
+        for _ in range(epochs):
+            for board_tensor, policy_target, value_target in policy_data:
+                opt.zero_grad()
+                actions, values = self.model(board_tensor)
+                policy_loss = F.cross_entropy(actions, policy_target)
+                value_loss = F.mse_loss(values, value_target.unsqueeze(1))
+                loss = policy_loss + value_loss
+                loss.backward()
+                opt.step()
+        self.model.eval()
+

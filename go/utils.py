@@ -4,7 +4,7 @@ import subprocess
 import numpy as np
 
 # tag::print_utils[]
-from go import gotypes
+import gotypes
 
 COLS = 'ABCDEFGHJKLMNOPQRST'
 STONE_TO_CHAR = {

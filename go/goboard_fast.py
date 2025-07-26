@@ -1,8 +1,8 @@
 import copy
-from go.gotypes import Player, Point
-from go.scoring import compute_game_result
-from go import zobrist
-from go.utils import MoveAge
+from gotypes import Player, Point
+from scoring import compute_game_result
+import zobrist
+from utils import MoveAge
 
 __all__ = [
     'Board',

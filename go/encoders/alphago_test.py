@@ -1,9 +1,9 @@
 import unittest
 
-from go.agent.helpers import is_point_an_eye
-from go.goboard_fast import Board, GameState, Move
-from go.gotypes import Player, Point
-from go.encoders.alphago import AlphaGoEncoder
+from agent.helpers import is_point_an_eye
+from goboard_fast import Board, GameState, Move
+from gotypes import Player, Point
+from encoders.alphago import AlphaGoEncoder
 
 
 class AlphaGoEncoderTest(unittest.TestCase):

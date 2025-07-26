@@ -1,8 +1,8 @@
 import unittest
 
-from go.agent.helpers import is_point_an_eye
-from go.goboard_fast import Board
-from go.gotypes import Player, Point
+from agent.helpers import is_point_an_eye
+from goboard_fast import Board
+from gotypes import Player, Point
 
 
 class EyeTest(unittest.TestCase):

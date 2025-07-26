@@ -2,8 +2,8 @@ import unittest
 
 import six
 
-from go.goboard_fast import Board, GameState, Move
-from go.gotypes import Player, Point
+from goboard_fast import Board, GameState, Move
+from gotypes import Player, Point
 
 
 class BoardTest(unittest.TestCase):

@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from go.rl import experience
+from rl import experience
 
 
 class ExperienceTest(unittest.TestCase):

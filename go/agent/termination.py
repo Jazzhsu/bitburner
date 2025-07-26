@@ -1,7 +1,7 @@
 # tag::termination_imports[]
-from go import goboard_fast
-from go.agent.base import Agent
-from go import scoring
+import goboard_fast
+from agent.base import Agent
+import scoring
 # end::termination_imports[]
 
 

@@ -1,8 +1,8 @@
 import unittest
 
-from go import scoring
-from go.goboard_fast import Board
-from go.gotypes import Player, Point
+from scoring import scoring
+from goboard_fast import Board
+from gotypes import Player, Point
 
 
 class ScoringTest(unittest.TestCase):

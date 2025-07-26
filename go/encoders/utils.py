@@ -1,4 +1,4 @@
-from go.goboard_fast import Move
+from goboard_fast import Move
 
 
 def is_ladder_capture(game_state, candidate, recursion_depth=50):

@@ -1,8 +1,8 @@
-from go.encoders.base import Encoder
-from go.encoders.utils import is_ladder_escape, is_ladder_capture
-from go.gotypes import Point, Player
-from go.goboard_fast import Move
-from go.agent.helpers import is_point_an_eye
+from encoders.base import Encoder
+from encoders.utils import is_ladder_escape, is_ladder_capture
+from gotypes import Point, Player
+from goboard_fast import Move
+from agent.helpers import is_point_an_eye
 import numpy as np
 
 """

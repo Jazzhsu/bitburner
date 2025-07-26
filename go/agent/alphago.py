@@ -1,7 +1,7 @@
 # tag::alphago_imports[]
 import numpy as np
-from go.agent.base import Agent
-from go.goboard_fast import Move
+from agent.base import Agent
+from goboard_fast import Move
 import operator
 # end::alphago_imports[]
 

@@ -1,7 +1,7 @@
-from go import rl
-from go import scoring
-from go import goboard_fast as goboard
-from go.gotypes import Player
+import scoring
+import goboard_fast as goboard
+from gotypes import Player
+from rl.experience import ExperienceCollector, combine_experience
 
 from collections import namedtuple
 
@@ -33,15 +33,15 @@ def simulate_game(black_player, white_player):
 
 
 def experience_simulation(num_games, agent1, agent2):
-    collector1 = rl.ExperienceCollector()
-    collector2 = rl.ExperienceCollector()
+    collector1 = ExperienceCollector()
+    collector2 = ExperienceCollector()
 
     color1 = Player.black
     for i in range(num_games):
         collector1.begin_episode()
-        agent1.set_collector(collector1)
+        # agent1.set_collector(collector1)
         collector2.begin_episode()
-        agent2.set_collector(collector2)
+        # agent2.set_collector(collector2)
 
         if color1 == Player.black:
             black_player, white_player = agent1, agent2
@@ -56,4 +56,4 @@ def experience_simulation(num_games, agent1, agent2):
             collector1.complete_episode(reward=-1)
         color1 = color1.other
 
-    return rl.combine_experience([collector1, collector2])
+    return combine_experience([collector1, collector2])

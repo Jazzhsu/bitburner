@@ -1,4 +1,4 @@
-from go.gotypes import Player, Point
+from gotypes import Point, Player
 
 __all__ = ['HASH_CODE', 'EMPTY_BOARD']
 
