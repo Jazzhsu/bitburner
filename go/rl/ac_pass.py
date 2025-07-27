@@ -16,12 +16,13 @@ __all__ = [
 
 
 class ACAgent(Agent):
-    def __init__(self, model, encoder):
+    def __init__(self, model, encoder, device):
         Agent.__init__(self)
-        self.model = model
+        self.model = model.to(device)
         self.encoder = encoder
         self.collector = None
         self.temperature = 1.0
+        self.device = device
 
         self.last_state_value = 0
 
@@ -36,7 +37,7 @@ class ACAgent(Agent):
 
         board_tensor = torch.from_numpy(self.encoder.encode(game_state))
 
-        actions, values = self.model(board_tensor[None].float())
+        actions, values = self.model(board_tensor[None].float().to(self.device))
         move_probs = actions[0].detach().cpu().numpy()
         estimated_value = values[0].detach().cpu().numpy()[0]
         self.last_state_value = float(estimated_value)
@@ -91,8 +92,15 @@ class ACAgent(Agent):
 
         for _ in range(epochs):
             for board_tensor, policy_target, value_target in policy_data:
+
+                board_tensor = board_tensor.to(self.device)
+                policy_target = policy_target.to(self.device)
+                value_target = value_target.to(self.device)
+
                 opt.zero_grad()
                 actions, values = self.model(board_tensor)
+                actions = actions.to(self.device)
+                values = values.to(self.device)
                 policy_loss = F.cross_entropy(actions, policy_target)
                 value_loss = F.mse_loss(values, value_target.unsqueeze(1))
                 loss = policy_loss + value_loss

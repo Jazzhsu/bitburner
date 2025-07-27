@@ -1,11 +1,12 @@
-from gotypes import Point
+from gotypes import Point, Player
+from goboard_fast import Board
 
 __all__ = [
     'is_point_an_eye',
 ]
 
 
-def is_point_an_eye(board, point, color):
+def is_point_an_eye(board: Board, point: Point, color: Player) -> bool:
     if board.get(point) is not None:
         return False
     # All adjacent points must contain friendly stones.

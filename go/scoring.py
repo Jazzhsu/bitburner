@@ -72,6 +72,8 @@ def evaluate_territory(board):
             p = Point(row=r, col=c)
             if p in status:  # <1>
                 continue
+            if board.is_wall(p):
+                continue
             stone = board.get(p)
             if stone is not None:  # <2>
                 status[p] = board.get(p)

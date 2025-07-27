@@ -7,7 +7,7 @@ import numpy as np
 
 """
 Feature name            num of planes   Description
-Stone colour            3               Player stone / opponent stone / empty
+Stone colour            4               Player stone / opponent stone / empty / wall
 Ones                    1               A constant plane filled with 1
 Zeros                   1               A constant plane filled with 0
 Sensibleness            1               Whether a move is legal and does not fill its own eyes
@@ -22,17 +22,17 @@ Ladder escape           1               Whether a move at this point is a succes
 
 FEATURE_OFFSETS = {
     "stone_color": 0,
-    "ones": 3,
-    "zeros": 4,
-    "sensibleness": 5,
-    "turns_since": 6,
-    "liberties": 14,
-    "liberties_after": 22,
-    "capture_size": 30,
-    "self_atari_size": 38,
-    "ladder_capture": 46,
-    "ladder_escape": 47,
-    "current_player_color": 48
+    "ones": 4,
+    "zeros": 5,
+    "sensibleness": 6,
+    "turns_since": 7,
+    "liberties": 15,
+    "liberties_after": 23,
+    "capture_size": 31,
+    "self_atari_size": 39,
+    "ladder_capture": 47,
+    "ladder_escape": 48,
+    "current_player_color": 49
 }
 
 
@@ -44,7 +44,7 @@ class AlphaGoEncoder(Encoder):
     def __init__(self, board_size=(19, 19), use_player_plane=True):
         self.board_width, self.board_height = board_size
         self.use_player_plane = use_player_plane
-        self.num_planes = 48 + use_player_plane
+        self.num_planes = 49 + use_player_plane
 
     def name(self):
         return 'alphago'
@@ -60,8 +60,10 @@ class AlphaGoEncoder(Encoder):
                     board_tensor[offset("stone_color")][r][c] = 1
                 elif go_string and go_string.color == game_state.next_player.other:
                     board_tensor[offset("stone_color") + 1][r][c] = 1
-                else:
+                elif game_state.board.is_wall(point):
                     board_tensor[offset("stone_color") + 2][r][c] = 1
+                else:
+                    board_tensor[offset("stone_color") + 3][r][c] = 1
 
                 board_tensor[offset("ones")] = self.ones()
                 board_tensor[offset("zeros")] = self.zeros()
@@ -69,9 +71,8 @@ class AlphaGoEncoder(Encoder):
                 if not is_point_an_eye(game_state.board, point, game_state.next_player):
                     board_tensor[offset("sensibleness")][r][c] = 1
 
-                ages = min(game_state.board.move_ages.get(r, c), 8)
+                ages = int(min(game_state.board.move_ages.get(r, c), 8))
                 if ages > 0:
-                    print(ages)
                     board_tensor[offset("turns_since") + ages][r][c] = 1
 
                 if game_state.board.get_go_string(point):

@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import copy
+import random
 from gotypes import Player, Point
 from scoring import compute_game_result
 import zobrist
 from utils import MoveAge
+from goboard_gen_wall import gen_wall
 
 __all__ = [
     'Board',
@@ -10,11 +14,16 @@ __all__ = [
     'Move',
 ]
 
-neighbor_tables = {}
-corner_tables = {}
+HANDICAP = {
+    5: 1,
+    7: 3,
+    9: 4,
+    13: 5,
+    19: 7
+}
 
 
-def init_neighbor_table(dim):
+def init_neighbor_table(dim: tuple[int, int], walls: set[Point]) -> dict[Point, list[Point]]:
     rows, cols = dim
     new_table = {}
     for r in range(1, rows + 1):
@@ -23,12 +32,13 @@ def init_neighbor_table(dim):
             full_neighbors = p.neighbors()
             true_neighbors = [
                 n for n in full_neighbors
-                if 1 <= n.row <= rows and 1 <= n.col <= cols]
+                if 1 <= n.row <= rows and 1 <= n.col <= cols and n not in walls
+            ]
             new_table[p] = true_neighbors
-    neighbor_tables[dim] = new_table
+    return new_table
 
 
-def init_corner_table(dim):
+def init_corner_table(dim: tuple[int, int], walls: set[Point]) -> dict[Point, list[Point]]:
     rows, cols = dim
     new_table = {}
     for r in range(1, rows + 1):
@@ -42,9 +52,10 @@ def init_corner_table(dim):
             ]
             true_corners = [
                 n for n in full_corners
-                if 1 <= n.row <= rows and 1 <= n.col <= cols]
+                if 1 <= n.row <= rows and 1 <= n.col <= cols and n not in walls
+            ]
             new_table[p] = true_corners
-    corner_tables[dim] = new_table
+    return new_table
 
 
 class IllegalMoveError(Exception):
@@ -59,6 +70,10 @@ class GoString():
         self.color = color
         self.stones = frozenset(stones)
         self.liberties = frozenset(liberties)
+        self.hash = 0
+        
+        for stone in stones:
+            self.hash ^= zobrist.HASH_CODE[stone, color]
 
     def without_liberty(self, point):
         new_liberties = self.liberties - set([point])
@@ -77,6 +92,9 @@ class GoString():
             combined_stones,
             (self.liberties | string.liberties) - combined_stones)
 
+    def __hash__(self):
+        return self.hash
+
     @property
     def num_liberties(self):
         return len(self.liberties)
@@ -92,22 +110,30 @@ class GoString():
 
 
 class Board():
-    def __init__(self, num_rows, num_cols):
+    def __init__(self, num_rows, num_cols, do_init: bool = True):
         self.num_rows = num_rows
         self.num_cols = num_cols
         self._grid = {}
         self._hash = zobrist.EMPTY_BOARD
 
-        global neighbor_tables
+        self.wall_points = gen_wall(num_rows) if do_init else set()
+
         dim = (num_rows, num_cols)
-        if dim not in neighbor_tables:
-            init_neighbor_table(dim)
-        if dim not in corner_tables:
-            init_corner_table(dim)
-        self.neighbor_table = neighbor_tables[dim]
-        self.corner_table = corner_tables[dim]
+        self.neighbor_table = init_neighbor_table(dim, self.wall_points)
+        self.corner_table = init_corner_table(dim, self.wall_points)
         self.move_ages = MoveAge(self)
 
+        if do_init:
+            self.apply_handicap(HANDICAP[num_rows])
+
+    def available_points(self):
+        return self.num_rows * self.num_cols - len(self.wall_points)
+
+    def get_wall_count(self, point):
+        return 4 - len(self.neighbors(point))
+
+    def is_wall(self, point):
+        return point in self.wall_points
 
     def neighbors(self, point):
         return self.neighbor_table[point]
@@ -174,7 +200,8 @@ class Board():
                     continue
                 if neighbor_string is not string:
                     self._replace_string(neighbor_string.with_liberty(point))
-            self._grid[point] = None
+            
+            self._grid.pop(point)
             # Remove filled point hash code.
             self._hash ^= zobrist.HASH_CODE[point, string.color]
             # Add empty point hash code.
@@ -213,7 +240,8 @@ class Board():
 
     def is_on_grid(self, point):
         return 1 <= point.row <= self.num_rows and \
-            1 <= point.col <= self.num_cols
+            1 <= point.col <= self.num_cols and \
+            point not in self.wall_points
 
     def get(self, point):
         """Return the content of a point on the board.
@@ -237,6 +265,25 @@ class Board():
             return None
         return string
 
+    def apply_handicap(self, handicap: int):
+        avail_moves = []
+        for row in range(1, self.num_rows + 1):
+            for col in range(1, self.num_cols + 1):
+                if self.is_wall(Point(row, col)):
+                    continue
+                
+                liberty_count = 0
+                for neighbor in self.neighbor_table[Point(row, col)]:
+                    if self._grid.get(neighbor) is None:
+                        liberty_count += 1
+                
+                if liberty_count == 4:
+                    avail_moves.append(Point(row, col))
+        
+        random.shuffle(avail_moves)
+        for i in range(handicap):
+            self.place_stone(Player.white, avail_moves[i])
+
     def __eq__(self, other):
         return isinstance(other, Board) and \
             self.num_rows == other.num_rows and \
@@ -244,11 +291,14 @@ class Board():
             self._hash() == other._hash()
 
     def __deepcopy__(self, memodict={}):
-        copied = Board(self.num_rows, self.num_cols)
+        copied = Board(self.num_rows, self.num_cols, do_init=False)
         # Can do a shallow copy b/c the dictionary maps tuples
         # (immutable) to GoStrings (also immutable)
         copied._grid = copy.copy(self._grid)
         copied._hash = self._hash
+        copied.wall_points = self.wall_points
+        copied.neighbor_table = self.neighbor_table
+        copied.corner_table = self.corner_table
         return copied
 
 # tag::return_zobrist[]
@@ -309,7 +359,7 @@ class Move():
 
 
 class GameState():
-    def __init__(self, board, next_player, previous, move):
+    def __init__(self, board: Board, next_player: Player, previous: GameState | None, move: Move | None):
         self.board = board
         self.next_player = next_player
         self.previous_state = previous
@@ -343,7 +393,7 @@ class GameState():
         return self.board.is_self_capture(player, move.point)
 
     @property
-    def situation(self):
+    def situation(self) -> tuple[Player, Board]:
         return (self.next_player, self.board)
 
     def does_move_violate_ko(self, player, move):
@@ -362,6 +412,7 @@ class GameState():
         if move.is_pass or move.is_resign:
             return True
         return (
+            move.point not in self.board.wall_points and
             self.board.get(move.point) is None and
             not self.is_move_self_capture(self.next_player, move) and
             not self.does_move_violate_ko(self.next_player, move))
@@ -376,7 +427,7 @@ class GameState():
             return False
         return self.last_move.is_pass and second_last_move.is_pass
 
-    def legal_moves(self):
+    def legal_moves(self, include_pass=True) -> list[Move]:
         moves = []
         for row in range(1, self.board.num_rows + 1):
             for col in range(1, self.board.num_cols + 1):
@@ -384,8 +435,9 @@ class GameState():
                 if self.is_valid_move(move):
                     moves.append(move)
         # These two moves are always legal.
-        moves.append(Move.pass_turn())
-        moves.append(Move.resign())
+        if include_pass:
+            moves.append(Move.pass_turn())
+            moves.append(Move.resign())
 
         return moves
 

@@ -19,6 +19,9 @@ from rl import ac_pass
 from goboard_fast import GameState, Player, Point
 from encoders import alphago
 from models.ac_model import ACModel
+from ai.illuminati_agent import IlluminatiAgent
+
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu')
 
 
 def load_agent(filename, board_size):
@@ -26,7 +29,7 @@ def load_agent(filename, board_size):
     model = ACModel(alphago.AlphaGoEncoder((board_size, board_size)))
     model.load_state_dict(model_dict)
     encoder = alphago.AlphaGoEncoder((board_size, board_size))
-    return ac_pass.ACAgent(model, encoder)
+    return ac_pass.ACAgent(model, encoder, DEVICE)
 
 
 COLS = 'ABCDEFGHJKLMNOPQRST'
@@ -48,7 +51,10 @@ def print_board(board):
         line = []
         for col in range(1, board.num_cols + 1):
             stone = board.get(Point(row=row, col=col))
-            line.append(STONE_TO_CHAR[stone])
+            if board.is_wall(Point(row=row, col=col)):
+                line.append('#')
+            else:
+                line.append(STONE_TO_CHAR[stone])
         print('%2d %s' % (row, ''.join(line)))
     print('   ' + COLS[:board.num_cols])
 
@@ -72,7 +78,7 @@ def simulate_game(black_player, white_player, board_size):
     }
     num_moves = 0
     while not game.is_over():
-        agents[game.next_player].set_temperature(1.0)
+        agents[game.next_player]
         next_move = agents[game.next_player].select_move(game)
         moves.append(next_move)
         game = game.apply_move(next_move)
@@ -95,37 +101,30 @@ def get_temp_file():
     return fname
 
 
-def do_self_play(board_size, agent1_filename, agent2_filename,
-                 num_games,
-                 experience_filename,
-                 gpu_frac):
+def do_self_play(board_size, agent1_filename, num_games, experience_filename):
 
     random.seed(int(time.time()) + os.getpid())
     np.random.seed(int(time.time()) + os.getpid())
 
     agent1 = load_agent(agent1_filename, board_size)
-    agent2 = load_agent(agent2_filename, board_size)
+    reference_agent = IlluminatiAgent()
 
     collector1 = ExperienceCollector()
 
-    color1 = Player.black
+    black_player = agent1
+    white_player = reference_agent
     for i in range(num_games):
         print('Simulating game %d/%d...' % (i + 1, num_games))
         collector1.begin_episode()
         agent1.set_collector(collector1)
 
-        if color1 == Player.black:
-            black_player, white_player = agent1, agent2
-        else:
-            white_player, black_player = agent1, agent2
         game_record = simulate_game(black_player, white_player, board_size)
-        if game_record.winner == color1:
-            print('Agent 1 wins.')
+        if game_record.winner == Player.black:
+            print('RL Agent wins.')
             collector1.complete_episode(reward=1)
         else:
-            print('Agent 2 wins.')
+            print('Reference Agent wins.')
             collector1.complete_episode(reward=-1)
-        color1 = color1.other
 
     experience = combine_experience([collector1])
     print('Saving experience buffer to %s\n' % experience_filename)
@@ -133,11 +132,11 @@ def do_self_play(board_size, agent1_filename, agent2_filename,
         experience.serialize(experience_outf)
 
 
-def generate_experience(learning_agent, reference_agent, exp_file,
+def generate_experience(learning_agent, exp_file,
                         num_games, board_size, num_workers):
+    print(f"Generating experience for {learning_agent} with {num_games} games and {num_workers} workers")
     experience_files = []
     workers = []
-    gpu_frac = 0.95 / float(num_workers)
     games_per_worker = num_games // num_workers
     for i in range(num_workers):
         filename = get_temp_file()
@@ -147,10 +146,8 @@ def generate_experience(learning_agent, reference_agent, exp_file,
             args=(
                 board_size,
                 learning_agent,
-                reference_agent,
                 games_per_worker,
                 filename,
-                gpu_frac,
             )
         )
         worker.start()
@@ -194,6 +191,7 @@ def train_on_experience(learning_agent, output_file, experience_file,
     # Do the training in the background process. Otherwise some Keras
     # stuff gets initialized in the parent, and later that forks, and
     # that messes with the workers.
+    print(f"Training {learning_agent} on {experience_file} with {lr} learning rate and {batch_size} batch size")
     worker = multiprocessing.Process(
         target=train_worker,
         args=(
@@ -210,47 +208,44 @@ def train_on_experience(learning_agent, output_file, experience_file,
 
 
 def play_games(args):
-    agent1_fname, agent2_fname, num_games, board_size, gpu_frac = args
+    agent1_fname, num_games, board_size = args
 
     random.seed(int(time.time()) + os.getpid())
     np.random.seed(int(time.time()) + os.getpid())
 
     agent1 = load_agent(agent1_fname, board_size)
-    agent2 = load_agent(agent2_fname, board_size)
+    reference_agent = IlluminatiAgent()
 
     wins, losses = 0, 0
-    color1 = Player.black
+    black_player = agent1
+    white_player = reference_agent
     for i in range(num_games):
         print('Simulating game %d/%d...' % (i + 1, num_games))
-        if color1 == Player.black:
-            black_player, white_player = agent1, agent2
-        else:
-            white_player, black_player = agent1, agent2
         game_record = simulate_game(black_player, white_player, board_size)
-        if game_record.winner == color1:
-            print('Agent 1 wins')
+        if game_record.winner == Player.black:
+            print('RL Agent wins')
             wins += 1
         else:
-            print('Agent 2 wins')
+            print('Reference Agent wins')
             losses += 1
-        print('Agent 1 record: %d/%d' % (wins, wins + losses))
-        color1 = color1.other
+        print('RL Agent record: %d/%d' % (wins, wins + losses))
     return wins, losses
 
 
-def evaluate(learning_agent, reference_agent,
+def evaluate(learning_agent,
              num_games, num_workers, board_size):
+    print(f"Evaluating {learning_agent} on {num_games} games with {num_workers} workers")
     games_per_worker = num_games // num_workers
-    gpu_frac = 0.95 / float(num_workers)
     pool = multiprocessing.Pool(num_workers)
     worker_args = [
         (
-            learning_agent, reference_agent,
-            games_per_worker, board_size, gpu_frac,
+            learning_agent,
+            games_per_worker,
+            board_size,
         )
         for _ in range(num_workers)
     ]
-    game_results = pool.map(play_games, worker_args)
+    game_results = pool.map(play_games, worker_args[0])
 
     total_wins, total_losses = 0, 0
     for wins, losses in game_results:
@@ -288,16 +283,16 @@ def main():
         args.agent, datetime.datetime.now()))
 
     learning_agent = args.agent
-    reference_agent = args.agent
     experience_file = os.path.join(args.work_dir, 'exp_temp.hdf5')
     tmp_agent = os.path.join(args.work_dir, 'agent_temp.hdf5')
     working_agent = os.path.join(args.work_dir, 'agent_cur.hdf5')
+    best_agent = os.path.join(args.work_dir, 'agent_best.hdf5')
+    highest_win_count = 0
     total_games = 0
     while True:
-        print('Reference: %s' % (reference_agent,))
         logf.write('Total games so far %d\n' % (total_games,))
         generate_experience(
-            learning_agent, reference_agent,
+            learning_agent,
             experience_file,
             num_games=args.games_per_batch,
             board_size=args.board_size,
@@ -307,7 +302,7 @@ def main():
             lr=args.lr, batch_size=args.bs, board_size=args.board_size)
         total_games += args.games_per_batch
         wins = evaluate(
-            learning_agent, reference_agent,
+            learning_agent,
             num_games=480,
             num_workers=args.num_workers,
             board_size=args.board_size)
@@ -317,15 +312,10 @@ def main():
             wins, float(wins) / 480.0))
         shutil.copy(tmp_agent, working_agent)
         learning_agent = working_agent
-        if wins >= 262:
-            next_filename = os.path.join(
-                args.work_dir,
-                'agent_%08d.hdf5' % (total_games,))
-            shutil.move(tmp_agent, next_filename)
-            reference_agent = next_filename
-            logf.write('New reference is %s\n' % next_filename)
-        else:
-            print('Keep learning\n')
+        if wins > highest_win_count:
+            highest_win_count = wins
+            shutil.copy(tmp_agent, best_agent)
+            logf.write('New best agent is %s\n' % best_agent)
         logf.flush()
 
 
