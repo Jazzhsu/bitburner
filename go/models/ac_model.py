@@ -161,8 +161,10 @@ class ACModel(nn.Module):
         """
         # If input is a game state, encode it first
         if not isinstance(game_state, torch.Tensor):
+            # get current device of this mode
+            device = next(self.parameters()).device
             encoded_state = self.encoder.encode(game_state)
-            x = torch.FloatTensor(encoded_state).unsqueeze(0)  # Add batch dimension
+            x = torch.FloatTensor(encoded_state).unsqueeze(0).to(device)  # Add batch dimension
         else:
             x = game_state
             

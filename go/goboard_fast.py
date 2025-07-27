@@ -8,6 +8,8 @@ import zobrist
 from utils import MoveAge
 from goboard_gen_wall import gen_wall
 
+DISABLE_HANDICAP = False
+
 __all__ = [
     'Board',
     'GameState',
@@ -123,7 +125,7 @@ class Board():
         self.corner_table = init_corner_table(dim, self.wall_points)
         self.move_ages = MoveAge(self)
 
-        if do_init:
+        if do_init and not DISABLE_HANDICAP:
             self.apply_handicap(HANDICAP[num_rows])
 
     def available_points(self):

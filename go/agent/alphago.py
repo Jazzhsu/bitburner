@@ -64,18 +64,17 @@ class AlphaGoNode:
 
 # tag::alphago_mcts_init[]
 class AlphaGoMCTS(Agent):
-    def __init__(self, policy_agent, fast_policy_agent, value_agent,
+    def __init__(self, ac_agent,
                  lambda_value=0.5, num_simulations=1000,
-                 depth=50, rollout_limit=100):
-        self.policy = policy_agent
-        self.rollout_policy = fast_policy_agent
-        self.value = value_agent
+                 depth=50, rollout_limit=100, device='cpu'):
+        self.ac_agent = ac_agent
 
         self.lambda_value = lambda_value
         self.num_simulations = num_simulations
         self.depth = depth
         self.rollout_limit = rollout_limit
         self.root = AlphaGoNode()
+        self.device = device
 # end::alphago_mcts_init[]
 
 # tag::alphago_mcts_rollout[]
@@ -93,10 +92,10 @@ class AlphaGoMCTS(Agent):
                 move, node = node.select_child()  # <5>
                 current_state = current_state.apply_move(move)  # <5>
 
-            value = self.value.predict(current_state)  # <6>
+            policy_outputs, value_outputs = self.ac_agent.model(current_state)
             rollout = self.policy_rollout(current_state)  # <6>
 
-            weighted_value = (1 - self.lambda_value) * value + \
+            weighted_value = (1 - self.lambda_value) * value_outputs.detach().cpu().numpy() + \
                 self.lambda_value * rollout  # <7>
 
             node.update_values(weighted_value)  # <8>
@@ -126,13 +125,14 @@ class AlphaGoMCTS(Agent):
 
 # tag::alphago_policy_probs[]
     def policy_probabilities(self, game_state):
-        encoder = self.policy._encoder
-        outputs = self.policy.predict(game_state)
+        encoder = self.ac_agent.encoder
+        policy_outputs, value_outputs = self.ac_agent.model(game_state)
+        policy_outputs = policy_outputs.detach().cpu().numpy()[0]
         legal_moves = game_state.legal_moves()
         if not legal_moves:
             return [], []
         encoded_points = [encoder.encode_point(move.point) for move in legal_moves if move.point]
-        legal_outputs = outputs[encoded_points]
+        legal_outputs = policy_outputs[encoded_points]
         normalized_outputs = legal_outputs / np.sum(legal_outputs)
         return legal_moves, normalized_outputs
 # end::alphago_policy_probs[]
